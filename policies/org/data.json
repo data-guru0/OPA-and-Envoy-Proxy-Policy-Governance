@@ -1,0 +1,30 @@
+{
+  "agents": {
+    "payment-agent": {
+      "owner": "payments-platform-team",
+      "tools": ["lookup_customer", "transfer_money"],
+      "environments": ["dev", "staging", "production"],
+      "limits": { "transfer_money": 500000 }
+    },
+    "support-agent": {
+      "owner": "customer-support-team",
+      "tools": ["lookup_customer", "issue_refund"],
+      "environments": ["dev", "staging", "production"],
+      "limits": { "issue_refund": 10000 }
+    },
+    "beta-agent": {
+      "owner": "ai-lab",
+      "tools": ["lookup_customer", "transfer_money", "issue_refund"],
+      "environments": ["dev", "staging"],
+      "limits": { "transfer_money": 10000, "issue_refund": 1000 }
+    }
+  },
+  "tool_permissions": {
+    "lookup_customer": { "roles": ["payments_officer", "support_executive", "intern"], "departments": ["payments", "customer_support"] },
+    "issue_refund":    { "roles": ["support_executive", "payments_officer"],           "departments": ["payments", "customer_support"] },
+    "transfer_money":  { "roles": ["payments_officer"],                                "departments": ["payments"] }
+  },
+  "thresholds": {
+    "approval_required_above": 50000
+  }
+}

@@ -1,0 +1,80 @@
+name: nexabank-opa
+
+# Envoy (PEP) enforces, OPA (PDP) decides, the apps contain no policy code.
+#
+#   browser ─► envoy:8000 ─(OPA: Gate 1)─► assistant ─► Groq
+#                                          assistant ─► envoy:9000 ─(OPA: Gate 2 + 3)─► bank-api
+#
+# bank-api is on the private `core` network, which only Envoy joins: there is no way around the PEP.
+# Settings live in .env (GROQ_API_KEY, GROQ_MODEL). After editing .env:  docker compose up -d
+
+services:
+  # ------------------------------------------------------------ PEP: the proxy every request passes through
+  envoy:
+    image: envoyproxy/envoy:v1.39-latest
+    command: envoy -c /etc/envoy/envoy.yaml --log-level warn
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - envoy-dynamic:/envoy-dynamic:ro     # listeners rendered by the control plane, hot-reloaded
+    ports:
+      - "8000:8000"        # NexaBank AI Assistant UI (through Envoy): http://localhost:8000
+      - "9901:9901"        # Envoy admin: http://localhost:9901/stats?filter=ext_authz
+    networks: [default, core]
+    depends_on:
+      control: { condition: service_healthy }
+    restart: unless-stopped
+
+  # ------------------------------------------------------------ PDP: OPA with the Envoy ext_authz gRPC plugin
+  opa:
+    image: openpolicyagent/opa:1.21.1-envoy
+    # Starts EMPTY: policies arrive through the control plane.
+    # :9191 gRPC ext_authz server for Envoy; it evaluates data.envoy.authz.result for every request
+    # :8181 REST API (policies, data, direct queries)
+    # decision logs: shipped to the control plane (Audit tab) and printed to the console
+    command: >
+      run --server --addr=0.0.0.0:8181 --log-level=error
+      --set=plugins.envoy_ext_authz_grpc.addr=:9191
+      --set=plugins.envoy_ext_authz_grpc.path=envoy/authz/result
+      --set=services.control.url=http://control:8300
+      --set=decision_logs.service=control
+      --set=decision_logs.reporting.min_delay_seconds=1
+      --set=decision_logs.reporting.max_delay_seconds=2
+      --set=decision_logs.console=true
+    ports:
+      - "8181:8181"        # OPA REST API: http://localhost:8181/v1/data/...
+    restart: unless-stopped
+
+  # ------------------------------------------------------------ control plane: policy distribution, Envoy config, tests, audit
+  control:
+    build: ./app
+    command: python -u control.py
+    volumes:
+      - ./policies:/policies:ro             # save a .rego file -> live in OPA within ~2 s
+      - ./envoy:/envoy-src:ro               # listeners.yaml template
+      - envoy-dynamic:/envoy-dynamic        # rendered listeners for Envoy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys; sys.exit(not os.path.exists('/envoy-dynamic/lds.yaml'))"]
+      interval: 2s
+      retries: 15
+    depends_on: [opa]
+    restart: unless-stopped
+
+  # ------------------------------------------------------------ the AI application (no policy code)
+  assistant:
+    build: ./app
+    command: python -u assistant.py
+    env_file: .env
+    restart: unless-stopped   # no ports: only reachable through Envoy :8000
+
+  bank-api:
+    build: ./app
+    command: python -u bank_api.py
+    networks: [core]          # private: the assistant cannot reach it directly
+    restart: unless-stopped
+
+volumes:
+  envoy-dynamic:
+
+networks:
+  core:
+    internal: true

@@ -1,0 +1,62 @@
+# Envoy bootstrap. Envoy = the Policy Enforcement Point (PEP).
+#
+# The listeners (where ext_authz asks OPA) live in listeners.yaml. The control plane renders that file into a
+# shared volume and Envoy hot-reloads it, so fail-open/closed can be switched live from the UI (Operations tab).
+#
+#   :8000  ingress   browser   -> assistant   plain proxy (serves the UI)
+#   :9000  egress    assistant -> bank-api    every tool call is checked by OPA
+#   :9901  admin     stats, e.g. http://localhost:9901/stats?filter=ext_authz
+
+node: { id: nexabank-envoy, cluster: nexabank }   # required for dynamic (file-based) config
+
+admin:
+  address:
+    socket_address: { address: 0.0.0.0, port_value: 9901 }
+
+dynamic_resources:
+  lds_config:
+    resource_api_version: V3
+    path_config_source:
+      path: /envoy-dynamic/lds.yaml
+      watched_directory: { path: /envoy-dynamic }
+
+static_resources:
+  clusters:
+    - name: assistant
+      type: STRICT_DNS
+      load_assignment:
+        cluster_name: assistant
+        endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: assistant, port_value: 8000 } } } }] }]
+
+    - name: bank_api
+      type: STRICT_DNS
+      load_assignment:
+        cluster_name: bank_api
+        endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: bank-api, port_value: 7000 } } } }] }]
+
+    - name: control                 # control plane UI API (/ops/*)
+      type: STRICT_DNS
+      load_assignment:
+        cluster_name: control
+        endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: control, port_value: 8300 } } } }] }]
+
+    - name: opa                     # OPA's ext_authz gRPC server
+      type: STRICT_DNS
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config: { http2_protocol_options: {} }
+      load_assignment:
+        cluster_name: opa
+        endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: opa, port_value: 9191 } } } }] }]
+
+    - name: opa_unreachable         # used by "Simulate: Envoy loses OPA" in the Operations tab (nothing listens here)
+      type: STATIC
+      connect_timeout: 0.25s
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config: { http2_protocol_options: {} }
+      load_assignment:
+        cluster_name: opa_unreachable
+        endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: 127.0.0.1, port_value: 1 } } } }] }]
