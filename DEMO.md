@@ -1,4 +1,4 @@
-# DEMO: Building AI Policy Governance with OPA + Envoy, step by step
+# NexaBank: Stopping an AI Agent's ₹75,000 Transfer with OPA + Envoy
 ---
 
 The UI has five tabs. Students use all of them during the class:
@@ -18,9 +18,9 @@ The UI has five tabs. Students use all of them during the class:
 ---
 
 
-##  Tour of the system and first run
+## Meet NexaBank: the AI Assistant, Envoy and OPA
 
-### The containers
+### Who's Who: the Five Services Behind the Assistant
 
 The status pills at the top of the UI show the live state: Envoy up, OPA up, Envoy mode `fail-closed`, which
 policies are loaded (none yet), and the model.
@@ -34,7 +34,7 @@ policies are loaded (none yet), and the model.
 | `control` | Helper for the class: loads your `.rego` files into OPA, manages Envoy's config (fail-open switch) and collects OPA's decision log for the Audit tab. |
 
 
-### First run with zero policy
+### Day Zero: No Policy Yet, So Envoy Blocks Every Tool Call
 
 Click **⭐ ₹75,000 transfer, no approval**.
 
@@ -42,7 +42,7 @@ Click **⭐ ₹75,000 transfer, no approval**.
 
 ---
 
-## From Envoy to the AI-agent tool policy
+## Writing NexaBank's Rules, One Policy at a Time
 
 We'll create two policy files:
 
@@ -54,7 +54,7 @@ We'll create two policy files:
 After every save, glance at the top of the UI: the **Policies** pill lists the file, or a red banner shows OPA's
 error. Then click the scenarios named in each step on the **Assistant** tab.
 
-### Step 1: Hello Envoy (simple allow / deny)
+### Step 1: Let the AI Look Up Customers, Block Everything Else
 
 **Concept:** `package`, `default`, a rule, Envoy's input, the plugin's `result` contract.
 
@@ -81,7 +81,7 @@ Make a typo on purpose: add a line `allow if {` at the end of the file and save.
   request the assistant sent through Envoy*: that's the tool call on the wire.
 
 
-### Step 2: The adapter, from Envoy's HTTP view to a business request
+### Step 2: Translating Envoy's Request into a Banking Request
 
 Replace `policies/envoy_authz.rego` with:
 
@@ -130,7 +130,7 @@ envoy_authz.rego no longer decides. It only translates the request and asks:
 
 ---
 
-### Step 3: Department / role policy
+### Step 3: Only Payments Officers Can Move Money
 
 
 **3a. Hard-coded first.** Replace `policies/tools.rego` with:
@@ -180,7 +180,7 @@ allow if {
 
 **Click:** **Refund ₹3,000 (support)** → ALLOW. **Intern asks for a transfer** → DENY.
 
-### 💥 Now the problem statement
+### 💥 Anita's ₹75,000 Transfer Goes Through: Authorized ≠ Compliant
 
 Click **⭐ ₹75,000 transfer, no approval**.
 
@@ -194,7 +194,7 @@ Pause here. This is the moment of the lesson:
 
 ---
 
-### Step 4: Structured decisions with denial reasons
+### Step 4: Telling the Employee *Why* a Request Was Blocked
 
 A bare 403 tells the user, the auditor and the LLM nothing. The idiomatic Rego pattern is to collect every violated
 rule into a **set of reasons** and allow only when that set is empty.
@@ -267,7 +267,7 @@ Expand *Envoy's 403 response (body written by OPA)*: that JSON came from your `j
 
 ---
 
-### Step 5: Transaction amount threshold
+### Step 5: Stopping Transfers Above ₹50,000
 
 **Concept:** comparisons on input, thresholds from `data`, a package-level constant.
 
@@ -289,7 +289,7 @@ deny contains msg if {
 
 ---
 
-### Step 6: Manager approval (and the most important Rego trap)
+### Step 6: Big Transfers Need a Manager's Sign-off (and the Missing-Field Trap)
 
 Change the rule. Many people write it this way first, so **type it like this on purpose**:
 
@@ -342,7 +342,7 @@ Save, wait 2 s, and click **⚖️ Ask OPA** again with the same input: **✕ al
 
 ---
 
-### Step 7: Environment restrictions
+### Step 7: Approval Rules Apply to Real Money, Not Staging
 
 **Concept:** context beyond the request itself; helper rules that read like business language.
 
@@ -370,7 +370,7 @@ trusted context from deployment config, never from the user or the LLM.
 
 ---
 
-### Step 8: Risk-based policy
+### Step 8: High-Risk Transfers to New Beneficiaries
 
 **Concept:** consuming signals from other systems; several reasons accumulating in one set.
 
@@ -406,7 +406,7 @@ Click Send.
 ```
 ---
 
-### Step 9: AI-agent tool execution policy
+### Step 9: Keeping the Support Bot and the Beta Agent in Their Lane
 
 **Concept:** governing the **agent** as a first-class subject: inventory, tool allowlist, approved environments,
 per-agent limits.
@@ -476,7 +476,7 @@ allowed *and* no organizational rule may object.
 
 ---
 
-### Step 10: Input validation and a decision object
+### Step 10: Rejecting Bad LLM Arguments and Versioning the Decision
 
 
 What if the LLM sends `"amount": -5000` for a refund (a debit disguised as a refund), or forgets `amount`?
@@ -516,7 +516,7 @@ Query it in the **Ask OPA** tab: rule `data.nexabank.tools.decision`, preset **S
 `allow`, both `reasons` and the `policy_version`. Compare with rule `data.nexabank.tools`: that returns the
 **whole package**, every rule as one JSON document (`agent`, `threshold`, `role_permitted`, …).
 
-#### The complete `policies/tools.rego`
+#### NexaBank's Complete AI Tool Policy (`policies/tools.rego`)
 
 Read it top to bottom with the class. It should read like the bank's policy handbook:
 
@@ -630,7 +630,7 @@ deny contains msg if {
 
 ---
 
-## Step 11: Fail-open vs fail-closed, live
+## Step 11: When OPA Goes Down, Does the ₹75,000 Transfer Fail Safe?
 
 **Concept:** what the PEP does when the PDP can't answer is itself a **policy decision**, and often the most
 important one. In Envoy it's one line: `failure_mode_allow`.
